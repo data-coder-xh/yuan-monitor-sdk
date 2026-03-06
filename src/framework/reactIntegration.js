@@ -1,7 +1,8 @@
 import eventBus from '../core/eventBus';
+import React from 'react';
 
 // 使用函数式组件创建ErrorBoundary，避免直接依赖React
-const createErrorBoundary = (React) => {
+const createErrorBoundary = () => {
   if (!React || !React.Component) {
     throw new Error('React is required for ErrorBoundary');
   }
@@ -79,17 +80,15 @@ class ReactIntegration {
   constructor(config) {
     this.config = config;
     this.ErrorBoundary = null;
-    this.React = null;
   }
   
   // 初始化React集成
   init() {
-    // 尝试动态导入React
+    // 直接使用导入的 React 创建 ErrorBoundary
     try {
-      this.React = require('react');
-      this.ErrorBoundary = createErrorBoundary(this.React);
+      this.ErrorBoundary = createErrorBoundary();
     } catch (error) {
-      console.warn('React not found, ErrorBoundary will not be available');
+      console.warn('Failed to create ErrorBoundary:', error);
     }
     
     eventBus.emit('framework:react:integrated');
@@ -101,21 +100,21 @@ class ReactIntegration {
   
   // 获取ErrorBoundary组件
   getErrorBoundary() {
-    if (!this.ErrorBoundary && this.React) {
-      this.ErrorBoundary = createErrorBoundary(this.React);
+    if (!this.ErrorBoundary) {
+      this.ErrorBoundary = createErrorBoundary();
     }
     return this.ErrorBoundary;
   }
   
   // 自动包装应用根组件
   wrapApp(AppComponent) {
-    if (!AppComponent || !this.React) return AppComponent;
+    if (!AppComponent) return AppComponent;
     
     const ErrorBoundary = this.getErrorBoundary();
     if (!ErrorBoundary) return AppComponent;
     
-    const { Component } = this.React;
-    const { createElement } = this.React;
+    const { Component } = React;
+    const { createElement } = React;
     
     return class WrappedApp extends Component {
       render() {
