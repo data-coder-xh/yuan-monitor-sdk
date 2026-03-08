@@ -73,7 +73,10 @@ class YuanMonitor {
     });
     
     // 提供获取用户数据的接口
-    eventBus.on('core:getUserData', () => {
+    eventBus.on('core:getUserData', (callback) => {
+      if (typeof callback === 'function') {
+        callback(this.core.userData);
+      }
       return this.core.userData;
     });
   }

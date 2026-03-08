@@ -102,12 +102,20 @@ class DataReporter {
   
   report(data) {
     if (!data || !this.config.serverUrl) return;
-    
+
+    // eventBus.emit 返回 this，拿不到监听器返回值，必须用回调取 sessionId/userId/userData
+    let sessionId = '';
+    let userId = '';
+    let userData = {};
+    eventBus.emit('core:getSessionId', (id) => { sessionId = id != null ? String(id) : ''; });
+    eventBus.emit('core:getUserId', (id) => { userId = id != null ? String(id) : ''; });
+    eventBus.emit('core:getUserData', (data) => { userData = data && typeof data === 'object' ? data : {}; });
+
     const reportData = {
       appKey: this.config.appKey,
-      sessionId: eventBus.emit('core:getSessionId') || '',
-      userId: eventBus.emit('core:getUserId') || '',
-      userData: eventBus.emit('core:getUserData') || {},
+      sessionId,
+      userId,
+      userData,
       data,
       timestamp: Date.now(),
       environment: {
