@@ -46,8 +46,6 @@ class SessionReplay {
       // 重置自动停止计时器
       this.resetAutoStopTimer();
     });
-    
-    eventBus.emit('advanced:sessionReplay:initialized');
   }
   
   startRecording() {
@@ -87,8 +85,6 @@ class SessionReplay {
       ignoreClass: 'monitor-ignore',
       maskTextSelector: 'input, textarea, [data-monitor-mask]'
     });
-    
-    eventBus.emit('advanced:sessionReplay:started');
   }
   
   stopRecording() {
@@ -103,8 +99,6 @@ class SessionReplay {
       clearTimeout(this.autoStopTimer);
       this.autoStopTimer = null;
     }
-    
-    eventBus.emit('advanced:sessionReplay:stopped');
   }
   
   resetAutoStopTimer() {
@@ -203,7 +197,6 @@ class SessionReplay {
   destroy() {
     this.stopRecording();
     eventBus.off('error:captured');
-    eventBus.emit('advanced:sessionReplay:destroyed');
   }
 }
 
