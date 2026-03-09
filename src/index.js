@@ -4,14 +4,15 @@ import PerformanceCollector from './collector/performanceCollector';
 import BehaviorCollector from './collector/behaviorCollector';
 import DataReporter from './reporter/dataReporter';
 import VueIntegration from './framework/vueIntegration';
-import SessionReplay from './advanced/sessionReplay';
-import PluginManager from './core/pluginManager';
+import SessionReplay from './plugins/sessionReplay';
+import ModuleManager from './core/pluginManager';
 
 const noopReactIntegration = {
   config: null,
   init() {},
   getErrorBoundary() { return null; },
   wrapApp(AppComponent) { return AppComponent; },
+  updateConfig(nextConfig) { this.config = nextConfig; },
   destroy() {}
 };
 
@@ -20,7 +21,8 @@ class YuanMonitor {
     this.core = new MonitorCore(options);
     this.config = this.core.config;
     this.eventBus = this.core.eventBus;
-    this.moduleManager = new PluginManager();
+    this.moduleManager = new ModuleManager();
+    this._readyPromise = Promise.resolve(this);
 
     this.errorCollector = new ErrorCollector(this.config, this.eventBus);
     this.performanceCollector = new PerformanceCollector(this.config, this.eventBus);
@@ -37,48 +39,53 @@ class YuanMonitor {
   }
 
   _registerCoreModules() {
-    [
-      this.errorCollector,
-      this.performanceCollector,
-      this.behaviorCollector,
-      this.dataReporter,
-      this.sessionReplay
-    ].forEach((module) => this.moduleManager.register(module));
+    this.moduleManager.register(this.behaviorCollector, 10);
+    this.moduleManager.register(this.errorCollector, 20);
+    this.moduleManager.register(this.performanceCollector, 20);
+    this.moduleManager.register(this.dataReporter, 30);
+    this.moduleManager.register(this.sessionReplay, 40);
   }
 
   async _loadReactIntegrationIfNeeded() {
-    if (!this.config.framework?.react) return;
+    if (!this.config.framework?.react) return this;
     const m = await import('./framework/reactIntegration');
     const ReactIntegration = m.default;
     this.reactIntegration = new ReactIntegration(this.config, this.eventBus);
     this.reactIntegration.init();
     this.ErrorBoundary = this.reactIntegration.getErrorBoundary();
+    return this;
   }
 
   init() {
     const initialized = this.core.init();
     if (!initialized) return this;
+
     this.moduleManager.initAll();
-    this._loadReactIntegrationIfNeeded().catch((err) => {
+    this._readyPromise = this._loadReactIntegrationIfNeeded().catch((err) => {
       if (this.config.debug) console.warn('[YuanMonitor] React integration load failed:', err);
+      return this;
     });
     return this;
+  }
+
+  ready() {
+    return this._readyPromise || Promise.resolve(this);
   }
 
   setConfig(options) {
     this.core.setConfig(options);
     this.config = this.core.config;
-    [
-      this.errorCollector,
-      this.performanceCollector,
-      this.behaviorCollector,
-      this.dataReporter,
-      this.vueIntegration,
-      this.reactIntegration,
-      this.sessionReplay
-    ].forEach((module) => {
-      if (module) module.config = this.config;
+    this.moduleManager.updateAllConfig(this.config);
+
+    [this.vueIntegration, this.reactIntegration].forEach((module) => {
+      if (!module) return;
+      if (typeof module.updateConfig === 'function') {
+        module.updateConfig(this.config);
+      } else {
+        module.config = this.config;
+      }
     });
+
     return this;
   }
 
@@ -108,6 +115,7 @@ class YuanMonitor {
     this.moduleManager.destroyAll();
     if (typeof this.reactIntegration.destroy === 'function') this.reactIntegration.destroy();
     this.core.destroy();
+    if (instance === this) instance = null;
     return this;
   }
 

@@ -336,7 +336,7 @@ src/
 │   ├── errorCollector.js
 │   ├── performanceCollector.js
 │   └── behaviorCollector.js
-├── advanced/          # 高级功能
+├── plugins/           # 可插拔扩展
 │   └── sessionReplay.js
 ├── reporter/          # 数据上报
 │   └── dataReporter.js

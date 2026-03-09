@@ -52,6 +52,11 @@ class VueIntegration {
     this.eventBus.emit('framework:vue:integrated');
   }
 
+
+  updateConfig(nextConfig) {
+    this.config = nextConfig;
+  }
+
   uninstall() {
     const target = this._target;
     if (!target?.config) return;

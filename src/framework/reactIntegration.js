@@ -62,6 +62,11 @@ class ReactIntegration {
     return { ErrorBoundary: this.ErrorBoundary };
   }
 
+
+  updateConfig(nextConfig) {
+    this.config = nextConfig;
+  }
+
   getErrorBoundary() {
     if (!this.ErrorBoundary) this.ErrorBoundary = createErrorBoundary(this.eventBus);
     return this.ErrorBoundary;

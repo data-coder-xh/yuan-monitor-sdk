@@ -69,6 +69,11 @@ class PerformanceCollector {
     }, 15000);
   }
 
+
+  updateConfig(nextConfig) {
+    this.config = nextConfig;
+  }
+
   destroy() {
     if (this.resourceObserver) this.resourceObserver.disconnect();
     if (this.memoryInterval) clearInterval(this.memoryInterval);

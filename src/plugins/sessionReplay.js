@@ -97,6 +97,11 @@ class SessionReplay {
   getEvents() { return [...this.events]; }
   isActive() { return this.isRecording; }
 
+
+  updateConfig(nextConfig) {
+    this.config = nextConfig;
+  }
+
   destroy() {
     this.stopRecording();
     if (this._offError) this._offError();

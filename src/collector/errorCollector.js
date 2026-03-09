@@ -81,6 +81,11 @@ class ErrorCollector {
     });
   }
 
+
+  updateConfig(nextConfig) {
+    this.config = nextConfig;
+  }
+
   destroy() {
     if (this.originalOnerror) window.onerror = this.originalOnerror;
     if (this.originalOnunhandledrejection) window.onunhandledrejection = this.originalOnunhandledrejection;
