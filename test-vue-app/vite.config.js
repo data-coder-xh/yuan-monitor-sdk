@@ -3,9 +3,7 @@ import vue from '@vitejs/plugin-vue2'
 
 export default defineConfig({
   plugins: [vue()],
-  build: {
-    rollupOptions: {
-      external: ['react', 'react-dom']
-    }
-  }
+  optimizeDeps: {
+    exclude: ['yuan-monitor-sdk']
+  },
 })

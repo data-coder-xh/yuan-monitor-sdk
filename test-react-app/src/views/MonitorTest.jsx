@@ -1,6 +1,10 @@
-import { monitor } from '../monitor'
+import { useContext } from 'react'
+import { MonitorContext } from '../monitor'
 
 export default function MonitorTest() {
+  const monitor = useContext(MonitorContext)
+  if (!monitor) return null
+
   const testRuntimeError = () => {
     try {
       const undefinedVar = null
