@@ -1,64 +1,70 @@
-import config from './config';
-import eventBus from './eventBus';
+import { createConfig } from './config';
+import MonitorContext from './context';
+import Lifecycle from './lifecycle';
+import { createEventBus } from './eventBus';
 
 class MonitorCore {
   constructor(options = {}) {
-    this.config = { ...config, ...options };
-    this.eventBus = eventBus;
-    this.isInitialized = false;
-    this.sessionId = this.generateSessionId();
-    this.userId = null;
-    this.userData = {};
+    this.config = createConfig(options);
+    this.eventBus = createEventBus();
+    this.lifecycle = new Lifecycle();
+    this.context = new MonitorContext(this.config);
   }
-  
-  generateSessionId() {
-    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-  }
-  
+
   init() {
-    if (this.isInitialized) return;
-    
-    // 初始化时采样
+    if (!this.lifecycle.canInit()) return false;
+
     if (Math.random() > this.config.sampleRate) {
       this.config.enable = false;
-      return;
+      return false;
     }
-    
-    this.isInitialized = true;
+
+    this.lifecycle.markInitialized();
     this.eventBus.emit('core:initialized', this.config);
-    
+
     if (this.config.debug) {
       console.log('Monitor SDK initialized with config:', this.config);
     }
+
+    return true;
   }
-  
+
   setConfig(options) {
-    this.config = { ...this.config, ...options };
+    this.config = createConfig({ ...this.config, ...options });
+    this.context.config = this.config;
     this.eventBus.emit('core:configUpdated', this.config);
   }
-  
+
   setUserId(userId) {
-    this.userId = userId;
-    this.userData.id = userId;
-    this.eventBus.emit('core:userIdSet', userId);
+    this.context.setUserId(userId);
+    this.eventBus.emit('core:userIdSet', this.context.userId);
   }
-  
+
   setUserData(data) {
-    this.userData = { ...this.userData, ...data };
-    this.eventBus.emit('core:userDataSet', this.userData);
+    this.context.setUserData(data);
+    this.eventBus.emit('core:userDataSet', this.context.userData);
   }
-  
+
   getSessionId() {
-    return this.sessionId;
+    return this.context.sessionId;
   }
-  
+
   getConfig() {
     return this.config;
   }
-  
+
+  getContextSnapshot() {
+    return this.context.getSnapshot();
+  }
+
+  get isInitialized() {
+    return this.lifecycle.isInitialized;
+  }
+
   destroy() {
+    if (!this.lifecycle.canDestroy()) return;
+    this.lifecycle.markDestroyed();
     this.eventBus.clear();
-    this.isInitialized = false;
     if (this.config.debug) {
       console.log('Monitor SDK destroyed');
     }

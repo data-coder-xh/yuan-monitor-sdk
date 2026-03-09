@@ -1,8 +1,6 @@
-import eventBus from '../core/eventBus';
 import React from 'react';
 
-// 使用函数式组件创建ErrorBoundary，避免直接依赖React
-const createErrorBoundary = () => {
+const createErrorBoundary = (eventBus) => {
   if (!React || !React.Component) {
     throw new Error('React is required for ErrorBoundary');
   }
@@ -14,62 +12,32 @@ const createErrorBoundary = () => {
       super(props);
       this.state = { hasError: false, error: null, errorInfo: null };
     }
-    
+
     static getDerivedStateFromError(error) {
       return { hasError: true, error };
     }
-    
+
     componentDidCatch(error, errorInfo) {
       this.setState({ errorInfo });
-      
-      // 捕获React组件错误
-      const errorData = {
+      eventBus.emit('error:captured', {
         type: 'react',
         message: error?.message || 'Unknown React error',
         componentStack: errorInfo?.componentStack,
         stack: error?.stack,
         error
-      };
-      
-      eventBus.emit('error:captured', errorData);
-      
-      // 调用自定义错误处理函数
-      if (this.props.onError) {
-        this.props.onError(error, errorInfo);
-      }
+      });
+
+      if (this.props.onError) this.props.onError(error, errorInfo);
     }
-    
+
     render() {
-      if (this.state.hasError) {
-        // 自定义错误UI
-        if (this.props.fallback) {
-          return typeof this.props.fallback === 'function' 
-            ? this.props.fallback(this.state.error, this.state.errorInfo)
-            : this.props.fallback;
-        }
-        
-        // 默认错误UI
-        return React.createElement('div', {
-          style: {
-            padding: '20px',
-            border: '1px solid #f56c6c',
-            borderRadius: '4px',
-            backgroundColor: '#fef0f0',
-            color: '#f56c6c'
-          }
-        },
-          React.createElement('h2', null, 'Something went wrong.'),
-          React.createElement('details', {
-            style: { whiteSpace: 'pre-wrap' }
-          },
-            this.state.error && this.state.error.toString(),
-            React.createElement('br'),
-            this.state.errorInfo?.componentStack
-          )
-        );
+      if (!this.state.hasError) return this.props.children;
+      if (this.props.fallback) {
+        return typeof this.props.fallback === 'function'
+          ? this.props.fallback(this.state.error, this.state.errorInfo)
+          : this.props.fallback;
       }
-      
-      return this.props.children;
+      return React.createElement('div', null, 'Something went wrong.');
     }
   }
 
@@ -77,50 +45,37 @@ const createErrorBoundary = () => {
 };
 
 class ReactIntegration {
-  constructor(config) {
+  constructor(config, eventBus) {
     this.config = config;
     this.ErrorBoundary = null;
+    this.eventBus = eventBus;
   }
-  
-  // 初始化React集成
+
   init() {
-    // 直接使用导入的 React 创建 ErrorBoundary
     try {
-      this.ErrorBoundary = createErrorBoundary();
+      this.ErrorBoundary = createErrorBoundary(this.eventBus);
     } catch (error) {
       console.warn('Failed to create ErrorBoundary:', error);
     }
-    
-    eventBus.emit('framework:react:integrated');
-    
-    return {
-      ErrorBoundary: this.ErrorBoundary
-    };
+
+    this.eventBus.emit('framework:react:integrated');
+    return { ErrorBoundary: this.ErrorBoundary };
   }
-  
-  // 获取ErrorBoundary组件
+
   getErrorBoundary() {
-    if (!this.ErrorBoundary) {
-      this.ErrorBoundary = createErrorBoundary();
-    }
+    if (!this.ErrorBoundary) this.ErrorBoundary = createErrorBoundary(this.eventBus);
     return this.ErrorBoundary;
   }
-  
-  // 自动包装应用根组件
+
   wrapApp(AppComponent) {
     if (!AppComponent) return AppComponent;
-    
     const ErrorBoundary = this.getErrorBoundary();
     if (!ErrorBoundary) return AppComponent;
-    
-    const { Component } = React;
-    const { createElement } = React;
-    
+    const { Component, createElement } = React;
+
     return class WrappedApp extends Component {
       render() {
-        return createElement(ErrorBoundary, null, 
-          createElement(AppComponent, this.props)
-        );
+        return createElement(ErrorBoundary, null, createElement(AppComponent, this.props));
       }
     };
   }
