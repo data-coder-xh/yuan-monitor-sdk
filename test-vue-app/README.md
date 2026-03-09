@@ -1,22 +1,34 @@
-# Vue + Yuan Monitor SDK Demo
+# Vue 2 待办小站 + Yuan Monitor SDK
 
-## 使用方式
+Vue 2 + Vite + Vue Router 示例项目，集成 Yuan Monitor SDK。
 
-1. 在项目根目录先安装依赖并启动测试服务端（接收上报）：
-   ```bash
-   cd ..
-   npm run test:server
-   ```
+## 启动
 
-2. 在本目录安装依赖并启动：
-   ```bash
-   npm install
-   npm run dev
-   ```
+1. 确保监控后端已启动（默认 `http://localhost:3001`）。
+2. 本目录执行：`npm install` → `npm run dev`。
+3. 上报地址由环境变量配置，见下方。
 
-3. 打开页面后点击「触发错误」按钮，可在控制台和网络里看到 SDK 上报到 `http://localhost:3001/api/report`。
+## 上报地址配置
+
+在项目根目录创建或修改 `.env.development`：
+
+```
+VITE_REPORT_SERVER_URL=http://localhost:3001
+```
+
+不配置时默认使用 `http://localhost:3001`。
+
+## 路由与页面
+
+| 路径 | 说明 |
+|------|------|
+| `/` | 首页 |
+| `/todos` | 待办列表 |
+| `/todos/:id` | 待办详情 |
+| `/about` | 关于 |
+| `/monitor-test` | 监控测试 |
 
 ## 接入要点
 
-- **main.js**：先 `init(options)`，再 `monitor.useVue(Vue)`，最后 `new Vue(...).$mount('#app')`。
-- **useVue(Vue)**：会挂载 `Vue.config.errorHandler` 和全局 mixin，自动捕获组件错误和方法内未捕获错误并上报。
+- **main.js**：从 `monitor.js` 初始化 SDK，`monitor.useVue(Vue)` 后挂载带 `router` 的根实例。
+- **monitor.js**：统一配置 `serverUrl`（来自环境变量）、appKey、error/performance/behavior 等。
