@@ -4,8 +4,6 @@ const { initDb } = require('./db');
 const reportRoutes = require('./routes/report');
 const apiRoutes = require('./routes/api');
 
-initDb();
-
 const app = express();
 app.use(cors({
   origin: [
@@ -24,12 +22,20 @@ app.use(reportRoutes);
 app.use(apiRoutes);
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log('\n===========================================');
-  console.log('  监控后端已启动');
-  console.log('  地址: http://localhost:' + PORT);
-  console.log('===========================================');
-  console.log('  接收: POST /api/report, POST /session-replay');
-  console.log('  查询: GET /api/overview, /api/errors, /api/performance, /api/behavior, /api/session-replays');
-  console.log('');
-});
+
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log('\n===========================================');
+      console.log('  监控后端已启动 (MySQL)');
+      console.log('  地址: http://localhost:' + PORT);
+      console.log('===========================================');
+      console.log('  接收: POST /api/report, POST /session-replay');
+      console.log('  查询: GET /api/overview, /api/errors, /api/performance, /api/behavior, /api/session-replays');
+      console.log('');
+    });
+  })
+  .catch((err) => {
+    console.error('数据库连接失败:', err.message);
+    process.exit(1);
+  });

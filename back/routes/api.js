@@ -9,9 +9,9 @@ const {
   getOverview
 } = require('../db');
 
-router.get('/api/overview', (req, res) => {
+router.get('/api/overview', async (req, res) => {
   try {
-    const data = getOverview();
+    const data = await getOverview();
     data.recentErrors = (data.recentErrors || []).map((row) => ({
       ...row,
       payload: safeParse(row.payload_json)
@@ -23,14 +23,14 @@ router.get('/api/overview', (req, res) => {
   }
 });
 
-router.get('/api/errors', (req, res) => {
+router.get('/api/errors', async (req, res) => {
   try {
     const appKey = req.query.appKey || undefined;
     const start = req.query.start != null ? parseInt(req.query.start, 10) : undefined;
     const end = req.query.end != null ? parseInt(req.query.end, 10) : undefined;
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = Math.min(parseInt(req.query.pageSize, 10) || 20, 100);
-    const result = getErrors({ appKey, start, end, page, pageSize });
+    const result = await getErrors({ appKey, start, end, page, pageSize });
     result.list = result.list.map((row) => ({
       ...row,
       payload: safeParse(row.payload_json),
@@ -44,7 +44,7 @@ router.get('/api/errors', (req, res) => {
   }
 });
 
-router.get('/api/performance', (req, res) => {
+router.get('/api/performance', async (req, res) => {
   try {
     const appKey = req.query.appKey || undefined;
     const subType = req.query.subType || undefined;
@@ -52,7 +52,7 @@ router.get('/api/performance', (req, res) => {
     const end = req.query.end != null ? parseInt(req.query.end, 10) : undefined;
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = Math.min(parseInt(req.query.pageSize, 10) || 20, 100);
-    const result = getPerformance({ appKey, subType, start, end, page, pageSize });
+    const result = await getPerformance({ appKey, subType, start, end, page, pageSize });
     result.list = result.list.map((row) => ({
       ...row,
       payload: safeParse(row.payload_json),
@@ -65,7 +65,7 @@ router.get('/api/performance', (req, res) => {
   }
 });
 
-router.get('/api/behavior', (req, res) => {
+router.get('/api/behavior', async (req, res) => {
   try {
     const appKey = req.query.appKey || undefined;
     const sessionId = req.query.sessionId || undefined;
@@ -73,7 +73,7 @@ router.get('/api/behavior', (req, res) => {
     const end = req.query.end != null ? parseInt(req.query.end, 10) : undefined;
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = Math.min(parseInt(req.query.pageSize, 10) || 50, 100);
-    const result = getBehavior({ appKey, sessionId, start, end, page, pageSize });
+    const result = await getBehavior({ appKey, sessionId, start, end, page, pageSize });
     result.list = result.list.map((row) => ({
       ...row,
       payload: safeParse(row.payload_json)
@@ -85,13 +85,13 @@ router.get('/api/behavior', (req, res) => {
   }
 });
 
-router.get('/api/session-replays', (req, res) => {
+router.get('/api/session-replays', async (req, res) => {
   try {
     const appKey = req.query.appKey || undefined;
     const sessionId = req.query.sessionId || undefined;
     const page = parseInt(req.query.page, 10) || 1;
     const pageSize = Math.min(parseInt(req.query.pageSize, 10) || 20, 100);
-    const result = getSessionReplays({ appKey, sessionId, page, pageSize });
+    const result = await getSessionReplays({ appKey, sessionId, page, pageSize });
     res.json(result);
   } catch (err) {
     console.error('Session replays list error:', err);
@@ -99,10 +99,10 @@ router.get('/api/session-replays', (req, res) => {
   }
 });
 
-router.get('/api/session-replays/:id', (req, res) => {
+router.get('/api/session-replays/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const row = getSessionReplayById(id);
+    const row = await getSessionReplayById(id);
     if (!row) return res.status(404).json({ error: 'Not found' });
     const events = safeParse(row.events_json);
     res.json({

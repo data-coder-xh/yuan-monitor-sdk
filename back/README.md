@@ -1,6 +1,11 @@
 # 监控后端
 
-接收 SDK 上报数据并持久化到 SQLite，提供查询 API。
+接收 SDK 上报数据并持久化到 MySQL，提供查询 API。
+
+## 前置条件
+
+- MySQL 已启动，并已执行 `back/schema-mysql.sql` 创建数据库 `yuan_monitor` 及表。
+- 可选环境变量：`MYSQL_HOST`（默认 127.0.0.1）、`MYSQL_PORT`（默认 3306）、`MYSQL_USER`（默认 root）、`MYSQL_PASSWORD`、`MYSQL_DATABASE`（默认 yuan_monitor）。
 
 ## 启动
 

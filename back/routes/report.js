@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { insertReport, insertSessionReplay } = require('../db');
 
-router.post('/api/report', (req, res) => {
+router.post('/api/report', async (req, res) => {
   try {
     const body = req.body;
     const appKey = body.appKey || '';
@@ -17,7 +17,7 @@ router.post('/api/report', (req, res) => {
 
     for (const item of items) {
       if (!item || !item.type) continue;
-      insertReport({
+      await insertReport({
         app_key: appKey,
         session_id: sessionId,
         user_id: userId,
@@ -37,7 +37,7 @@ router.post('/api/report', (req, res) => {
   }
 });
 
-router.post('/session-replay', (req, res) => {
+router.post('/session-replay', async (req, res) => {
   try {
     const body = req.body;
     const appKey = body.appKey || '';
@@ -49,7 +49,7 @@ router.post('/session-replay', (req, res) => {
     const duration = data.duration != null ? data.duration : null;
     const lastErrorTime = data.lastErrorTime != null ? data.lastErrorTime : null;
 
-    insertSessionReplay({
+    await insertSessionReplay({
       app_key: appKey,
       session_id: sessionId,
       user_id: userId,
