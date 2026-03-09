@@ -1,24 +1,28 @@
+const INTERNAL_HEADER = 'X-SDK-Internal';
+
 class DataReporter {
   constructor(config, eventBus, options = {}) {
     this.config = config;
     this.eventBus = eventBus;
-    this.getContext = options.getContext || (() => ({}));
-    this.getBreadcrumbs = options.getBreadcrumbs || (() => []);
     this.queue = [];
     this.timer = null;
     this.retryCount = {};
     this.unsubscribers = [];
-
-    this.onError = this.reportError.bind(this);
-    this.onPerformance = this.reportPerformance.bind(this);
-    this.onBehavior = this.reportBehavior.bind(this);
+    this.getContext = options.getContext || (() => ({}));
+    this.getBreadcrumbs = options.getBreadcrumbs || (() => []);
   }
 
   init() {
-    this.unsubscribers.push(this.eventBus.on('error:captured', this.onError));
-    this.unsubscribers.push(this.eventBus.on('performance:metric', this.onPerformance));
-    this.unsubscribers.push(this.eventBus.on('behavior:breadcrumb', this.onBehavior));
+    this.unsubscribers = [
+      this.eventBus.on('error:captured', (data) => this.reportError(data)),
+      this.eventBus.on('performance:metric', (data) => this.reportPerformance(data)),
+      this.eventBus.on('behavior:breadcrumb', (data) => this.reportBehavior(data))
+    ];
     this.eventBus.emit('reporter:initialized');
+  }
+
+  get endpoint() {
+    return `${this.config.serverUrl}${this.config.reporter.endpoint || '/api/report'}`;
   }
 
   addToQueue(data) {
@@ -60,32 +64,37 @@ class DataReporter {
       data,
       timestamp: Date.now()
     });
+    return this.dispatchPayload(payload);
+  }
 
-    if (this.config.reporter.reportMethod === 'beacon') return this.reportBeacon(payload);
-    if (this.config.reporter.reportMethod === 'image') return this.reportImage(payload);
+  dispatchPayload(payload) {
+    const method = this.config.reporter.reportMethod;
+    if (method === 'beacon') return this.reportBeacon(payload);
+    if (method === 'image') return this.reportImage(payload);
     return this.reportFetch(payload);
   }
 
   reportFetch(data) {
-    if (!window.fetch) return this.reportImage(data);
-    fetch(`${this.config.serverUrl}/api/report`, {
+    if (!window.fetch) return this.reportBeacon(data);
+    fetch(this.endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-SDK-Internal': 'true' },
+      headers: { 'Content-Type': 'application/json', [INTERNAL_HEADER]: 'true' },
       body: data,
-      credentials: 'include'
+      credentials: 'include',
+      keepalive: true
     }).catch((error) => this.handleReportError(data, error));
   }
 
   reportBeacon(data) {
-    if (!window.navigator.sendBeacon) return this.reportFetch(data);
-    const success = window.navigator.sendBeacon(`${this.config.serverUrl}/api/report`, new Blob([data], { type: 'application/json' }));
-    if (!success) this.reportFetch(data);
+    if (!window.navigator.sendBeacon) return this.reportImage(data);
+    const success = window.navigator.sendBeacon(this.endpoint, new Blob([data], { type: 'application/json' }));
+    if (!success) this.reportImage(data);
   }
 
   reportImage(data) {
     try {
       const img = new Image();
-      img.src = `${this.config.serverUrl}/api/report?data=${encodeURIComponent(data)}`;
+      img.src = `${this.endpoint}?data=${encodeURIComponent(data)}`;
       img.onerror = () => this.handleReportError(data, new Error('Image beacon failed'));
     } catch (error) {
       this.handleReportError(data, error);
@@ -97,15 +106,27 @@ class DataReporter {
     const count = this.retryCount[key] || 0;
     if (count < this.config.reporter.retryCount) {
       this.retryCount[key] = count + 1;
-      setTimeout(() => this.report(data), this.config.reporter.retryDelay * Math.pow(2, count));
-    } else {
-      delete this.retryCount[key];
-      this.eventBus.emit('reporter:report:failed', { data, error });
+      setTimeout(() => this.dispatchPayload(data), this.config.reporter.retryDelay * Math.pow(2, count));
+      return;
     }
+
+    delete this.retryCount[key];
+    const fallbackChain = ['fetch', 'beacon', 'image'];
+    const currentMethodIndex = fallbackChain.indexOf(this.config.reporter.reportMethod);
+    const nextMethod = fallbackChain[currentMethodIndex + 1];
+
+    if (nextMethod) {
+      this.config.reporter.reportMethod = nextMethod;
+      this.retryCount[key] = 0;
+      this.dispatchPayload(data);
+      this.eventBus.emit('reporter:method:downgraded', { from: fallbackChain[currentMethodIndex], to: nextMethod, error });
+      return;
+    }
+
+    this.eventBus.emit('reporter:report:failed', { data, error });
   }
 
   flush() { this.flushQueue(); }
-
 
   updateConfig(nextConfig) {
     this.config = nextConfig;

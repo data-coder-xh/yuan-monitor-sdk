@@ -6,7 +6,9 @@ const defaultConfig = {
     enable: true,
     captureGlobalErrors: true,
     capturePromiseRejections: true,
-    captureResourceErrors: true
+    captureResourceErrors: true,
+    dedupeWindow: 5000,
+    sourceMapResolver: null
   },
   performance: {
     enable: true,
@@ -26,7 +28,10 @@ const defaultConfig = {
   advanced: {
     enableSessionReplay: false,
     sessionReplaySampleRate: 0.1,
-    enableWhiteScreenDetection: false
+    enableWhiteScreenDetection: false,
+    sessionReplayMaxEvents: 1200,
+    sessionReplayAutoStopDelay: 10000,
+    sessionReplayCheckoutEveryNms: 30000
   },
   reporter: {
     batchSize: 5,
@@ -34,7 +39,8 @@ const defaultConfig = {
     maxQueueSize: 20,
     reportMethod: 'fetch',
     retryCount: 3,
-    retryDelay: 1000
+    retryDelay: 1000,
+    endpoint: '/api/report'
   },
   framework: {
     vue: false,

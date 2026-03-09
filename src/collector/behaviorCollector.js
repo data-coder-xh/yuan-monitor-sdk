@@ -1,3 +1,14 @@
+const INTERNAL_HEADER = 'X-SDK-Internal';
+
+function hasInternalHeader(headers) {
+  if (!headers) return false;
+  if (headers instanceof Headers) return headers.get(INTERNAL_HEADER) === 'true';
+  if (Array.isArray(headers)) {
+    return headers.some(([key, value]) => String(key).toLowerCase() === INTERNAL_HEADER.toLowerCase() && String(value) === 'true');
+  }
+  return Object.keys(headers).some((key) => key.toLowerCase() === INTERNAL_HEADER.toLowerCase() && String(headers[key]) === 'true');
+}
+
 class BehaviorCollector {
   constructor(config, eventBus) {
     this.config = config;
@@ -7,6 +18,7 @@ class BehaviorCollector {
     this.originalFetch = null;
     this.originalXHROpen = null;
     this.originalXHRSend = null;
+    this.originalXHRSetRequestHeader = null;
     this.originalConsole = {};
   }
 
@@ -59,6 +71,13 @@ class BehaviorCollector {
     };
     history.pushState = (...args) => { handleRouteChange('pushState', args); return this.originalPushState.apply(history, args); };
     history.replaceState = (...args) => { handleRouteChange('replaceState', args); return this.originalReplaceState.apply(history, args); };
+    this._popStateHandler = () => {
+      const from = this.lastHref;
+      const to = location.href;
+      this.lastHref = to;
+      this.addBreadcrumb('route', { method: 'popstate', from, to });
+    };
+    window.addEventListener('popstate', this._popStateHandler);
   }
 
   setupNetworkRequestHandler() {
@@ -70,13 +89,26 @@ class BehaviorCollector {
     if (!window.XMLHttpRequest) return;
     this.originalXHROpen = XMLHttpRequest.prototype.open;
     this.originalXHRSend = XMLHttpRequest.prototype.send;
+    this.originalXHRSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
     const collector = this;
     XMLHttpRequest.prototype.open = function(method, url, ...args) {
-      this._monitor = { method: method.toUpperCase(), url: String(url), startTime: Date.now() };
+      this._monitor = { method: method.toUpperCase(), url: String(url), startTime: Date.now(), internal: false };
       return collector.originalXHROpen.apply(this, [method, url, ...args]);
     };
+    XMLHttpRequest.prototype.setRequestHeader = new Proxy(this.originalXHRSetRequestHeader, {
+      apply(target, thisArg, argArray) {
+        const [name, value] = argArray;
+        if (String(name).toLowerCase() === INTERNAL_HEADER.toLowerCase() && String(value) === 'true' && thisArg._monitor) {
+          thisArg._monitor.internal = true;
+        }
+        return Reflect.apply(target, thisArg, argArray);
+      }
+    });
+
     XMLHttpRequest.prototype.send = function(body, ...args) {
-      if (this._monitor?.url?.includes('/api/report')) return collector.originalXHRSend.apply(this, [body, ...args]);
+      if (this._monitor?.internal || this._monitor?.url?.includes('/api/report')) {
+        return collector.originalXHRSend.apply(this, [body, ...args]);
+      }
       if (this._monitor) {
         const done = () => collector.addBreadcrumb('xhr', {
           ...this._monitor,
@@ -96,7 +128,7 @@ class BehaviorCollector {
     if (!window.fetch) return;
     this.originalFetch = window.fetch;
     window.fetch = async (url, config = {}) => {
-      if (config?.headers?.['X-SDK-Internal'] === 'true') return this.originalFetch(url, config);
+      if (hasInternalHeader(config?.headers) || String(url).includes('/api/report')) return this.originalFetch(url, config);
       const startTime = Date.now();
       try {
         const response = await this.originalFetch(url, config);
@@ -120,15 +152,16 @@ class BehaviorCollector {
     });
   }
 
-
   updateConfig(nextConfig) {
     this.config = nextConfig;
   }
 
   destroy() {
     if (this._clickHandler) document.removeEventListener('click', this._clickHandler, true);
+    if (this._popStateHandler) window.removeEventListener('popstate', this._popStateHandler);
     if (this.originalXHROpen) XMLHttpRequest.prototype.open = this.originalXHROpen;
     if (this.originalXHRSend) XMLHttpRequest.prototype.send = this.originalXHRSend;
+    if (this.originalXHRSetRequestHeader) XMLHttpRequest.prototype.setRequestHeader = this.originalXHRSetRequestHeader;
     if (this.originalFetch) window.fetch = this.originalFetch;
     if (this.originalPushState) history.pushState = this.originalPushState;
     if (this.originalReplaceState) history.replaceState = this.originalReplaceState;
