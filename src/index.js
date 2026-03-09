@@ -46,6 +46,24 @@ class YuanMonitor {
     this.moduleManager.register(this.sessionReplay, 40);
   }
 
+  use(plugin, options = {}, priority = 50) {
+    if (!plugin) return this;
+    const module = typeof plugin === 'function'
+      ? plugin({ config: this.config, eventBus: this.eventBus, monitor: this }, options)
+      : plugin;
+    if (!module || typeof module.init !== 'function') return this;
+
+    if (typeof module.updateConfig === 'function') {
+      module.updateConfig(this.config);
+    } else {
+      module.config = this.config;
+    }
+
+    this.moduleManager.register(module, priority);
+    if (this.core.isInitialized) module.init();
+    return this;
+  }
+
   async _loadReactIntegrationIfNeeded() {
     if (!this.config.framework?.react) return this;
     const m = await import('./framework/reactIntegration');

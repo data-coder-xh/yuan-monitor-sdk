@@ -3,7 +3,7 @@ let rrweb = null;
 async function loadRrweb() {
   try {
     rrweb = await import('rrweb');
-  } catch (error) {
+  } catch (_) {
     rrweb = null;
   }
 }
@@ -46,12 +46,14 @@ class SessionReplay {
     if (this.isRecording) return;
     this.isRecording = true;
     this.events = [];
+    const maxEvents = this.config.advanced.sessionReplayMaxEvents || 1200;
     this.recorder = rrweb.record({
       emit: (event) => {
         this.events.push(event);
-        if (this.events.length > 1000) this.events.shift();
+        if (this.events.length > maxEvents) this.events.shift();
       },
-      maskAllInputs: true
+      maskAllInputs: true,
+      checkoutEveryNms: this.config.advanced.sessionReplayCheckoutEveryNms || 30000
     });
   }
 
@@ -69,7 +71,7 @@ class SessionReplay {
     this.autoStopTimer = setTimeout(() => {
       this.stopRecording();
       this.reportSessionReplay();
-    }, 10000);
+    }, this.config.advanced.sessionReplayAutoStopDelay || 10000);
   }
 
   reportSessionReplay() {
@@ -85,10 +87,13 @@ class SessionReplay {
     });
 
     if (navigator.sendBeacon) {
-      navigator.sendBeacon(`${this.config.serverUrl}/session-replay`, payload);
+      navigator.sendBeacon(`${this.config.serverUrl}/session-replay`, new Blob([payload], { type: 'application/json' }));
     } else {
       fetch(`${this.config.serverUrl}/session-replay`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-SDK-Internal': 'true' },
+        body: payload,
+        keepalive: true
       }).catch(() => {});
     }
     this.events = [];
@@ -96,7 +101,6 @@ class SessionReplay {
 
   getEvents() { return [...this.events]; }
   isActive() { return this.isRecording; }
-
 
   updateConfig(nextConfig) {
     this.config = nextConfig;
