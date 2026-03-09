@@ -6,3 +6,11 @@ dist
 .env.*.local
 pnpm-lock.yaml
 test-react-app/pnpm-lock.yaml
+
+# Backend
+back/*.db
+back/node_modules
+
+# Frontend
+front/node_modules
+front/dist

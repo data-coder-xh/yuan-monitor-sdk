@@ -311,6 +311,19 @@ const config = {
 - Edge
 - IE 11 (有限支持)
 
+## 监控平台（本地联调）
+
+本仓库包含接收并展示 SDK 数据的后端与前端：
+
+- **后端 (back)**：Node + Express + SQLite，接收 SDK 上报并持久化，提供查询 API。
+- **前端 (front)**：Vue 3 + Vite，展示错误、性能、行为、会话回放等监控数据。
+
+**启动方式：**
+
+1. 启动后端：`cd back && npm install && npm run dev`（默认 http://localhost:3001）
+2. 启动前端：`cd front && npm install && npm run dev`（默认 http://localhost:5173）
+3. 在 test-react-app / test-vue-app / test-vue3-app 中将 SDK 的 `serverUrl` 设为 `http://localhost:3001`，触发上报后可在 front 页面查看数据。
+
 ## 项目结构
 
 ```
