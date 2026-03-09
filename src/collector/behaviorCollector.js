@@ -120,6 +120,11 @@ class BehaviorCollector {
     });
   }
 
+
+  updateConfig(nextConfig) {
+    this.config = nextConfig;
+  }
+
   destroy() {
     if (this._clickHandler) document.removeEventListener('click', this._clickHandler, true);
     if (this.originalXHROpen) XMLHttpRequest.prototype.open = this.originalXHROpen;

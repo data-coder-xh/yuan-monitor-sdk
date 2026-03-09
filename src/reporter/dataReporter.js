@@ -106,6 +106,11 @@ class DataReporter {
 
   flush() { this.flushQueue(); }
 
+
+  updateConfig(nextConfig) {
+    this.config = nextConfig;
+  }
+
   destroy() {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
