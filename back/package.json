@@ -1,0 +1,16 @@
+{
+  "name": "yuan-monitor-back",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Backend for Yuan Monitor SDK - receives and stores monitoring data",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  }
+}
