@@ -1,244 +1,118 @@
-import eventBus from '../core/eventBus';
-
 class DataReporter {
-  constructor(config) {
+  constructor(config, eventBus, options = {}) {
     this.config = config;
+    this.eventBus = eventBus;
+    this.getContext = options.getContext || (() => ({}));
+    this.getBreadcrumbs = options.getBreadcrumbs || (() => []);
     this.queue = [];
     this.timer = null;
     this.retryCount = {};
+    this.unsubscribers = [];
+
+    this.onError = this.reportError.bind(this);
+    this.onPerformance = this.reportPerformance.bind(this);
+    this.onBehavior = this.reportBehavior.bind(this);
   }
-  
+
   init() {
-    eventBus.on('error:captured', this.reportError.bind(this));
-    eventBus.on('performance:web-vital', this.reportPerformance.bind(this));
-    eventBus.on('performance:resource', this.reportPerformance.bind(this));
-    eventBus.on('performance:long-task', this.reportPerformance.bind(this));
-    eventBus.on('performance:memory', this.reportPerformance.bind(this));
-    eventBus.on('behavior:breadcrumb', this.reportBehavior.bind(this));
-    
-    eventBus.emit('reporter:initialized');
+    this.unsubscribers.push(this.eventBus.on('error:captured', this.onError));
+    this.unsubscribers.push(this.eventBus.on('performance:metric', this.onPerformance));
+    this.unsubscribers.push(this.eventBus.on('behavior:breadcrumb', this.onBehavior));
+    this.eventBus.emit('reporter:initialized');
   }
-  
+
   addToQueue(data) {
     if (!data || !this.config.serverUrl) return;
-    
     this.queue.push(data);
-    
-    // 如果队列超过最大限制，立即上报
-    if (this.queue.length >= this.config.reporter.maxQueueSize) {
+    if (this.queue.length >= this.config.reporter.maxQueueSize || this.queue.length >= this.config.reporter.batchSize) {
       this.flushQueue();
       return;
     }
-    
-    // 如果队列达到批量大小，立即上报
-    if (this.queue.length >= this.config.reporter.batchSize) {
-      this.flushQueue();
-      return;
-    }
-    
-    // 设置定时上报
-    this.scheduleFlush();
+    if (!this.timer) this.timer = setTimeout(() => this.flushQueue(), this.config.reporter.batchInterval);
   }
-  
-  scheduleFlush() {
-    if (this.timer) return;
-    
-    this.timer = setTimeout(() => {
-      this.flushQueue();
-    }, this.config.reporter.batchInterval);
-  }
-  
+
   flushQueue() {
-    if (this.queue.length === 0) return;
-    
+    if (!this.queue.length) return;
     const batchData = [...this.queue];
     this.queue = [];
-    
-    // 清除定时器
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
     this.report(batchData);
   }
-  
+
   reportError(errorData) {
-    const data = {
-      type: 'error',
-      subType: errorData.type,
-      timestamp: Date.now(),
-      ...errorData,
-      breadcrumbs: eventBus.emit('behavior:getBreadcrumbs') || []
-    };
-    
-    this.addToQueue(data);
+    this.addToQueue({ type: 'error', subType: errorData.type, timestamp: Date.now(), ...errorData, breadcrumbs: this.getBreadcrumbs() });
   }
-  
+
   reportPerformance(performanceData) {
-    const data = {
-      type: 'performance',
-      subType: performanceData.type,
-      timestamp: Date.now(),
-      ...performanceData
-    };
-    
-    this.addToQueue(data);
+    this.addToQueue({ type: 'performance', subType: performanceData.type, timestamp: Date.now(), ...performanceData });
   }
-  
+
   reportBehavior(behaviorData) {
-    // 行为数据通常作为面包屑随错误一起上报，但也可以单独上报
-    if (this.config.behavior.enable) {
-      const data = {
-        type: 'behavior',
-        subType: behaviorData.type,
-        timestamp: Date.now(),
-        ...behaviorData
-      };
-      
-      this.addToQueue(data);
-    }
+    if (!this.config.behavior.enable) return;
+    this.addToQueue({ type: 'behavior', subType: behaviorData.type, timestamp: Date.now(), ...behaviorData });
   }
-  
+
   report(data) {
-    if (!data || !this.config.serverUrl) return;
-
-    // eventBus.emit 返回 this，拿不到监听器返回值，必须用回调取 sessionId/userId/userData
-    let sessionId = '';
-    let userId = '';
-    let userData = {};
-    eventBus.emit('core:getSessionId', (id) => { sessionId = id != null ? String(id) : ''; });
-    eventBus.emit('core:getUserId', (id) => { userId = id != null ? String(id) : ''; });
-    eventBus.emit('core:getUserData', (data) => { userData = data && typeof data === 'object' ? data : {}; });
-
-    const reportData = {
-      appKey: this.config.appKey,
-      sessionId,
-      userId,
-      userData,
+    const ctx = this.getContext();
+    const payload = JSON.stringify({
+      ...ctx,
       data,
-      timestamp: Date.now(),
-      environment: {
-        userAgent: navigator.userAgent,
-        language: navigator.language,
-        url: window.location.href,
-        referrer: document.referrer,
-        screenWidth: window.screen.width,
-        screenHeight: window.screen.height,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      }
-    };
-    
-    const serializedData = JSON.stringify(reportData);
-    
-    // 根据配置选择上报方式
-    switch (this.config.reporter.reportMethod) {
-      case 'beacon':
-        this.reportBeacon(serializedData);
-        break;
-      case 'image':
-        this.reportImage(serializedData);
-        break;
-      case 'fetch':
-      default:
-        this.reportFetch(serializedData);
-        break;
-    }
+      timestamp: Date.now()
+    });
+
+    if (this.config.reporter.reportMethod === 'beacon') return this.reportBeacon(payload);
+    if (this.config.reporter.reportMethod === 'image') return this.reportImage(payload);
+    return this.reportFetch(payload);
   }
-  
+
   reportFetch(data) {
-    if (!window.fetch) {
-      return this.reportImage(data);
-    }
-    
+    if (!window.fetch) return this.reportImage(data);
     fetch(`${this.config.serverUrl}/api/report`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-SDK-Internal': 'true'
-      },
+      headers: { 'Content-Type': 'application/json', 'X-SDK-Internal': 'true' },
       body: data,
       credentials: 'include'
-    }).catch((error) => {
-      this.handleReportError(data, error);
-    });
+    }).catch((error) => this.handleReportError(data, error));
   }
-  
+
   reportBeacon(data) {
-    if (!window.navigator.sendBeacon) {
-      return this.reportFetch(data);
-    }
-    
-    const blob = new Blob([data], { type: 'application/json' });
-    const success = window.navigator.sendBeacon(`${this.config.serverUrl}/api/report`, blob);
-    if (!success) {
-      this.reportFetch(data);
-    }
+    if (!window.navigator.sendBeacon) return this.reportFetch(data);
+    const success = window.navigator.sendBeacon(`${this.config.serverUrl}/api/report`, new Blob([data], { type: 'application/json' }));
+    if (!success) this.reportFetch(data);
   }
-  
+
   reportImage(data) {
     try {
       const img = new Image();
-      const encodedData = encodeURIComponent(data);
-      const url = `${this.config.serverUrl}/api/report?data=${encodedData}`;
-      
-      img.src = url;
-      img.onload = () => {
-        // 清理图片元素
-        img.onload = null;
-        img.onerror = null;
-      };
-      img.onerror = () => {
-        this.handleReportError(data, new Error('Image beacon failed'));
-        img.onload = null;
-        img.onerror = null;
-      };
+      img.src = `${this.config.serverUrl}/api/report?data=${encodeURIComponent(data)}`;
+      img.onerror = () => this.handleReportError(data, new Error('Image beacon failed'));
     } catch (error) {
       this.handleReportError(data, error);
     }
   }
-  
+
   handleReportError(data, error) {
-    const dataKey = JSON.stringify(data);
-    const count = this.retryCount[dataKey] || 0;
-    
+    const key = String(data);
+    const count = this.retryCount[key] || 0;
     if (count < this.config.reporter.retryCount) {
-      // 重试上报
-      this.retryCount[dataKey] = count + 1;
-      
-      setTimeout(() => {
-        this.report(data);
-      }, this.config.reporter.retryDelay * Math.pow(2, count)); // 指数退避
+      this.retryCount[key] = count + 1;
+      setTimeout(() => this.report(data), this.config.reporter.retryDelay * Math.pow(2, count));
     } else {
-      // 超过重试次数，放弃上报
-      delete this.retryCount[dataKey];
-      eventBus.emit('reporter:report:failed', { data, error });
+      delete this.retryCount[key];
+      this.eventBus.emit('reporter:report:failed', { data, error });
     }
   }
-  
-  flush() {
-    this.flushQueue();
-  }
-  
+
+  flush() { this.flushQueue(); }
+
   destroy() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    
-    // 上报剩余数据
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
     this.flushQueue();
-    
-    eventBus.off('error:captured', this.reportError.bind(this));
-    eventBus.off('performance:web-vital', this.reportPerformance.bind(this));
-    eventBus.off('performance:resource', this.reportPerformance.bind(this));
-    eventBus.off('performance:long-task', this.reportPerformance.bind(this));
-    eventBus.off('performance:memory', this.reportPerformance.bind(this));
-    eventBus.off('behavior:breadcrumb', this.reportBehavior.bind(this));
-    
-    eventBus.emit('reporter:destroyed');
+    this.unsubscribers.forEach((off) => off());
+    this.unsubscribers = [];
+    this.eventBus.emit('reporter:destroyed');
   }
 }
 

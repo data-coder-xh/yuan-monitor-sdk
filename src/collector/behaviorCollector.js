@@ -1,325 +1,134 @@
-import eventBus from '../core/eventBus';
-
 class BehaviorCollector {
-  constructor(config) {
+  constructor(config, eventBus) {
     this.config = config;
+    this.eventBus = eventBus;
     this.breadcrumbs = [];
     this.lastHref = document.location.href;
     this.originalFetch = null;
     this.originalXHROpen = null;
     this.originalXHRSend = null;
     this.originalConsole = {};
-    this.xhrHandlerInitialized = false;
-    this.fetchHandlerInitialized = false;
   }
-  
+
   init() {
     if (!this.config.behavior.enable) return;
-    
-    if (this.config.behavior.captureClicks) {
-      this.setupClickHandler();
-    }
-    
-    if (this.config.behavior.captureRouteChanges) {
-      this.setupRouteChangeHandler();
-    }
-    
-    if (this.config.behavior.captureNetworkRequests) {
-      this.setupNetworkRequestHandler();
-    }
-    
-    if (this.config.behavior.captureConsole) {
-      this.setupConsoleHandler();
-    }
-    
-    eventBus.emit('collector:behavior:initialized');
+    if (this.config.behavior.captureClicks) this.setupClickHandler();
+    if (this.config.behavior.captureRouteChanges) this.setupRouteChangeHandler();
+    if (this.config.behavior.captureNetworkRequests) this.setupNetworkRequestHandler();
+    if (this.config.behavior.captureConsole) this.setupConsoleHandler();
+    this.eventBus.emit('collector:behavior:initialized');
   }
-  
+
   addBreadcrumb(type, data) {
-    const breadcrumb = {
-      type,
-      timestamp: Date.now(),
-      ...data
-    };
-    
+    const breadcrumb = { type, timestamp: Date.now(), ...data };
     this.breadcrumbs.push(breadcrumb);
-    
-    // 限制面包屑数量
-    if (this.breadcrumbs.length > this.config.behavior.maxBreadcrumbs) {
-      this.breadcrumbs.shift();
-    }
-    
-    eventBus.emit('behavior:breadcrumb', breadcrumb);
+    if (this.breadcrumbs.length > this.config.behavior.maxBreadcrumbs) this.breadcrumbs.shift();
+    this.eventBus.emit('behavior:breadcrumb', breadcrumb);
     return breadcrumb;
   }
-  
-  getBreadcrumbs() {
-    return [...this.breadcrumbs];
-  }
-  
-  clearBreadcrumbs() {
-    this.breadcrumbs = [];
-    eventBus.emit('behavior:breadcrumbs:cleared');
-  }
-  
+
+  getBreadcrumbs() { return [...this.breadcrumbs]; }
+  clearBreadcrumbs() { this.breadcrumbs = []; this.eventBus.emit('behavior:breadcrumbs:cleared'); }
+
   setupClickHandler() {
-    document.addEventListener('click', (event) => {
+    this._clickHandler = (event) => {
       const target = event.target;
       if (!target || target.tagName === 'BODY') return;
-      
-      const tagName = target.tagName.toLowerCase();
-      const id = target.id ? `id="${target.id}"` : '';
-      const className = target.className ? `class="${target.className}"` : '';
-      const text = target.textContent ? target.textContent.trim().substring(0, 100) : '';
-      
-      const domInfo = `<${tagName} ${id} ${className}>${text}</${tagName}>`;
-      
       this.addBreadcrumb('click', {
-        dom: domInfo,
-        tagName,
+        tagName: target.tagName?.toLowerCase(),
         id: target.id,
         className: target.className,
-        text,
+        text: target.textContent?.trim().slice(0, 100),
         x: event.clientX,
         y: event.clientY
       });
-    }, true);
+    };
+    document.addEventListener('click', this._clickHandler, true);
   }
-  
+
   setupRouteChangeHandler() {
-    // 重写history.pushState和replaceState
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-    
+    this.originalPushState = history.pushState;
+    this.originalReplaceState = history.replaceState;
     const handleRouteChange = (method, args) => {
-      const url = args.length > 2 ? args[2] : undefined;
-      if (url) {
-        const from = this.lastHref;
-        const to = String(url);
-        this.lastHref = to;
-        
-        this.addBreadcrumb('route', {
-          method,
-          from,
-          to,
-          fullUrl: window.location.origin + to
-        });
-      }
-    };
-    
-    history.pushState = (...args) => {
-      handleRouteChange('pushState', args);
-      return originalPushState.apply(history, args);
-    };
-    
-    history.replaceState = (...args) => {
-      handleRouteChange('replaceState', args);
-      return originalReplaceState.apply(history, args);
-    };
-    
-    // 监听popstate事件
-    window.addEventListener('popstate', () => {
+      const url = args[2];
+      if (!url) return;
       const from = this.lastHref;
-      const to = window.location.href;
+      const to = String(url);
       this.lastHref = to;
-      
-      this.addBreadcrumb('route', {
-        method: 'popstate',
-        from,
-        to
-      });
-    });
-    
-    // 监听hashchange事件
-    window.addEventListener('hashchange', () => {
-      const from = this.lastHref;
-      const to = window.location.href;
-      this.lastHref = to;
-      
-      this.addBreadcrumb('route', {
-        method: 'hashchange',
-        from,
-        to
-      });
-    });
+      this.addBreadcrumb('route', { method, from, to });
+    };
+    history.pushState = (...args) => { handleRouteChange('pushState', args); return this.originalPushState.apply(history, args); };
+    history.replaceState = (...args) => { handleRouteChange('replaceState', args); return this.originalReplaceState.apply(history, args); };
   }
-  
+
   setupNetworkRequestHandler() {
     this.setupXHRHandler();
     this.setupFetchHandler();
   }
-  
+
   setupXHRHandler() {
     if (!window.XMLHttpRequest) return;
-    if (this.xhrHandlerInitialized) return;
-    this.xhrHandlerInitialized = true;
-    
-    const originalOpen = XMLHttpRequest.prototype.open;
-    const originalSend = XMLHttpRequest.prototype.send;
+    this.originalXHROpen = XMLHttpRequest.prototype.open;
+    this.originalXHRSend = XMLHttpRequest.prototype.send;
     const collector = this;
-    
     XMLHttpRequest.prototype.open = function(method, url, ...args) {
-      this._monitor = {
-        method: method.toUpperCase(),
-        url: String(url),
-        startTime: Date.now()
-      };
-      return originalOpen.apply(this, [method, url, ...args]);
+      this._monitor = { method: method.toUpperCase(), url: String(url), startTime: Date.now() };
+      return collector.originalXHROpen.apply(this, [method, url, ...args]);
     };
-    
     XMLHttpRequest.prototype.send = function(body, ...args) {
-      if (this._monitor && this._monitor.url.includes('X-SDK-Internal')) {
-        return originalSend.apply(this, [body, ...args]);
-      }
-      
+      if (this._monitor?.url?.includes('/api/report')) return collector.originalXHRSend.apply(this, [body, ...args]);
       if (this._monitor) {
-        this._monitor.reqData = body;
-        
-        const xhr = this;
-        
-        const handleLoad = () => {
-          const endTime = Date.now();
-          xhr._monitor.endTime = endTime;
-          xhr._monitor.elapsedTime = endTime - xhr._monitor.startTime;
-          xhr._monitor.status = xhr.status;
-          
-          collector.addBreadcrumb('xhr', {
-            method: xhr._monitor.method,
-            url: xhr._monitor.url,
-            startTime: xhr._monitor.startTime,
-            endTime,
-            elapsedTime: endTime - xhr._monitor.startTime,
-            status: xhr.status,
-            type: 'xhr'
-          });
-        };
-        
-        const handleError = () => {
-          const endTime = Date.now();
-          xhr._monitor.endTime = endTime;
-          xhr._monitor.elapsedTime = endTime - xhr._monitor.startTime;
-          xhr._monitor.status = xhr.status;
-          xhr._monitor.error = true;
-          
-          collector.addBreadcrumb('xhr', {
-            ...xhr._monitor,
-            type: 'xhr',
-            error: true
-          });
-        };
-        
-        xhr.addEventListener('load', handleLoad);
-        xhr.addEventListener('error', handleError);
-        xhr.addEventListener('abort', handleError);
+        const done = () => collector.addBreadcrumb('xhr', {
+          ...this._monitor,
+          endTime: Date.now(),
+          elapsedTime: Date.now() - this._monitor.startTime,
+          status: this.status
+        });
+        this.addEventListener('load', done);
+        this.addEventListener('error', done);
+        this.addEventListener('abort', done);
       }
-      
-      return originalSend.apply(this, [body, ...args]);
+      return collector.originalXHRSend.apply(this, [body, ...args]);
     };
   }
-  
+
   setupFetchHandler() {
     if (!window.fetch) return;
-    if (this.fetchHandlerInitialized) return;
-    this.fetchHandlerInitialized = true;
-    
-    const originalFetch = window.fetch;
-    
+    this.originalFetch = window.fetch;
     window.fetch = async (url, config = {}) => {
-      const headers = config.headers || {};
-      const isSdkInternal = headers['X-SDK-Internal'] === 'true';
-      
-      if (isSdkInternal) {
-        return originalFetch(url, config);
-      }
-      
+      if (config?.headers?.['X-SDK-Internal'] === 'true') return this.originalFetch(url, config);
       const startTime = Date.now();
-      const method = (config.method || 'GET').toUpperCase();
-      
-      const monitorData = {
-        method,
-        url: String(url),
-        startTime,
-        reqData: config.body,
-        type: 'fetch'
-      };
-      
       try {
-        const response = await originalFetch(url, config);
-        const endTime = Date.now();
-        
-        monitorData.endTime = endTime;
-        monitorData.elapsedTime = endTime - startTime;
-        monitorData.status = response.status;
-        
-        this.addBreadcrumb('fetch', monitorData);
-        
+        const response = await this.originalFetch(url, config);
+        this.addBreadcrumb('fetch', { method: (config.method || 'GET').toUpperCase(), url: String(url), status: response.status, elapsedTime: Date.now() - startTime });
         return response;
       } catch (error) {
-        const endTime = Date.now();
-        
-        monitorData.endTime = endTime;
-        monitorData.elapsedTime = endTime - startTime;
-        monitorData.error = true;
-        monitorData.errorMessage = error.message;
-        
-        this.addBreadcrumb('fetch', {
-          ...monitorData,
-          error: true
-        });
-        
+        this.addBreadcrumb('fetch', { method: (config.method || 'GET').toUpperCase(), url: String(url), elapsedTime: Date.now() - startTime, error: true });
         throw error;
       }
     };
   }
-  
+
   setupConsoleHandler() {
-    const consoleMethods = ['log', 'info', 'warn', 'error', 'debug'];
-    
-    consoleMethods.forEach(method => {
-      if (typeof console[method] === 'function') {
-        this.originalConsole[method] = console[method];
-        
-        console[method] = (...args) => {
-          this.addBreadcrumb('console', {
-            method,
-            args: args.map(arg => {
-              try {
-                if (typeof arg === 'object') {
-                  return JSON.stringify(arg);
-                }
-                return String(arg);
-              } catch (e) {
-                return '[Object]';
-              }
-            })
-          });
-          
-          return this.originalConsole[method].apply(console, args);
-        };
-      }
+    ['log', 'info', 'warn', 'error', 'debug'].forEach((method) => {
+      if (typeof console[method] !== 'function') return;
+      this.originalConsole[method] = console[method];
+      console[method] = (...args) => {
+        this.addBreadcrumb('console', { method, args: args.map((a) => String(a)) });
+        return this.originalConsole[method].apply(console, args);
+      };
     });
   }
-  
+
   destroy() {
-    // 恢复原始方法
-    if (this.originalXHROpen) {
-      XMLHttpRequest.prototype.open = this.originalXHROpen;
-    }
-    if (this.originalXHRSend) {
-      XMLHttpRequest.prototype.send = this.originalXHRSend;
-    }
-    if (this.originalFetch) {
-      window.fetch = this.originalFetch;
-    }
-    
-    // 恢复原始控制台方法
-    for (const method in this.originalConsole) {
-      if (this.originalConsole.hasOwnProperty(method)) {
-        console[method] = this.originalConsole[method];
-      }
-    }
-    
-    eventBus.emit('collector:behavior:destroyed');
+    if (this._clickHandler) document.removeEventListener('click', this._clickHandler, true);
+    if (this.originalXHROpen) XMLHttpRequest.prototype.open = this.originalXHROpen;
+    if (this.originalXHRSend) XMLHttpRequest.prototype.send = this.originalXHRSend;
+    if (this.originalFetch) window.fetch = this.originalFetch;
+    if (this.originalPushState) history.pushState = this.originalPushState;
+    if (this.originalReplaceState) history.replaceState = this.originalReplaceState;
+    Object.keys(this.originalConsole).forEach((method) => { console[method] = this.originalConsole[method]; });
+    this.eventBus.emit('collector:behavior:destroyed');
   }
 }
 
